@@ -92,8 +92,31 @@ ACE units do not read or expose the spools uid so it uses the sku field. (Spoolm
 - **Online Updates ** 
 - **Auto-Load** - Load all filaments autmatically, Parallel preload in bg mode
 - **RFID Handling** - Automatic RFID detection and display across ACE switches
-- **PAXX Firmware Compatible / Installer** - Works with PAXX firmware which provides display mirroring, allowing full load/unload control from your computer / Integrated PAXX Firmware 
+- **PAXX Firmware Compatible / Installer** - Works with PAXX firmware which provides display mirroring, allowing full load/unload control from your computer / Integrated PAXX Firmware
 - **Clean Install/Uninstall** - One-command scripts with automatic backup and restore
+
+### PAXX-managed package
+
+The repository also contains a PAXX-managed package contract under
+`paxx/`. This path is intentionally separate from the standalone SSH
+installer. PAXX can pin a release, verify its checksum, install it under a
+versioned application directory, and activate the Klipper modules with
+startup-time bind mounts. Stock Klipper files are not overwritten on disk.
+
+When PAXX sets `MULTIACE_MANAGED=1`, multiACE disables its own online updater
+and reports that updates belong in PAXX Firmware Config. The package builder
+uses an allowlist and excludes the standalone installer, uninstaller, updater,
+init scripts, and file-copy mode switch helper.
+
+Build the package from the `multiace/` directory with:
+
+```bash
+python3 paxx/build_package.py --output dist/multiace-paxx.tar.gz
+```
+
+This does not replace the normal standalone installation path. The PAXX
+integration must provide the activation hook, persistent configuration seeding,
+conflict detection, and rollback behavior.
 
 
 ## ACE Pro 2 Support 

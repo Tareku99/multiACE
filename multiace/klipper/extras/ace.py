@@ -32,9 +32,14 @@ def _env_flag(name, default=False):
     return value.strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-# PAXX sets this explicitly when it owns installation and updates.  The
-# standalone SSH installer leaves it unset, preserving the existing behavior.
-MULTIACE_MANAGED = _env_flag('MULTIACE_MANAGED')
+# PAXX sets this explicitly when it owns installation and updates. The marker
+# is a durable fallback for service/SSH environments that do not inherit the
+# activation hook's environment.
+MULTIACE_MANAGED_MARKER = os.environ.get(
+    'MULTIACE_MANAGED_MARKER', '/oem/apps/multiace/.paxx-managed')
+MULTIACE_MANAGED = (
+    _env_flag('MULTIACE_MANAGED')
+    or os.path.exists(MULTIACE_MANAGED_MARKER))
 MULTIACE_CONFIG_DIR = os.environ.get(
     'MULTIACE_CONFIG_DIR',
     '/home/lava/printer_data/config/extended/multiace')

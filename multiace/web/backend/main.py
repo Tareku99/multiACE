@@ -11,6 +11,7 @@ Environment variables:
   MULTIACE_CFG_PATH      default /home/lava/printer_data/config/extended/ace.cfg
   MULTIACE_FRONTEND_DIR  default ../frontend (relative to this file)
   MULTIACE_MANAGED       set to 1 when PAXX owns installation and updates
+  MULTIACE_MANAGED_MARKER durable managed-install marker path
   MULTIACE_CONFIG_DIR    default /home/lava/printer_data/config/extended/multiace
   MULTIACE_WEB_VERSION   default "0.1.0"
 """
@@ -54,7 +55,11 @@ def _env_flag(name: str) -> bool:
         "1", "true", "yes", "on")
 
 
-MULTIACE_MANAGED = _env_flag("MULTIACE_MANAGED")
+MULTIACE_MANAGED_MARKER = os.environ.get(
+    "MULTIACE_MANAGED_MARKER", "/oem/apps/multiace/.paxx-managed")
+MULTIACE_MANAGED = (
+    _env_flag("MULTIACE_MANAGED")
+    or os.path.exists(MULTIACE_MANAGED_MARKER))
 UPDATES_MANAGED = MULTIACE_MANAGED or _env_flag("MULTIACE_DISABLE_UPDATES")
 MULTIACE_CONFIG_DIR = os.environ.get(
     "MULTIACE_CONFIG_DIR",

@@ -10,6 +10,10 @@ Environment variables:
   MOONRAKER_URL          default http://127.0.0.1:7125
   MULTIACE_CFG_PATH      default /home/lava/printer_data/config/extended/ace.cfg
   MULTIACE_FRONTEND_DIR  default ../frontend (relative to this file)
+  MULTIACE_MANAGED       set to 1 when PAXX owns installation and updates
+  MULTIACE_MANAGED_MARKER durable managed-install marker path
+  MULTIACE_CONFIG_DIR    default /home/lava/printer_data/config/extended/multiace
+  MULTIACE_I18N_DIR      optional translation-catalog directory override
   MULTIACE_WEB_VERSION   default "0.1.0"
 """
 from __future__ import annotations
@@ -43,19 +47,37 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import preflight_core
+from i18n_path import resolve_i18n_dir
 
 MOONRAKER_URL = os.environ.get("MOONRAKER_URL", "http://127.0.0.1:7125")
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+MULTIACE_MANAGED_MARKER = os.environ.get(
+    "MULTIACE_MANAGED_MARKER", "/oem/apps/multiace/.paxx-managed")
+MULTIACE_MANAGED = (
+    _env_flag("MULTIACE_MANAGED")
+    or os.path.exists(MULTIACE_MANAGED_MARKER))
+UPDATES_MANAGED = MULTIACE_MANAGED or _env_flag("MULTIACE_DISABLE_UPDATES")
+MULTIACE_CONFIG_DIR = os.environ.get(
+    "MULTIACE_CONFIG_DIR",
+    "/home/lava/printer_data/config/extended/multiace",
+)
 MULTIACE_CFG_PATH = os.environ.get(
     "MULTIACE_CFG_PATH",
     "/home/lava/printer_data/config/extended/ace.cfg",
 )
 SNAPSHOT_DIR = os.environ.get(
     "MULTIACE_SNAPSHOT_DIR",
-    "/home/lava/printer_data/config/extended/multiace/filament_snapshots",
+    os.path.join(MULTIACE_CONFIG_DIR, "filament_snapshots"),
 )
 OVERRIDE_FILE = os.environ.get(
     "MULTIACE_OVERRIDE_FILE",
-    "/home/lava/printer_data/config/extended/multiace/slot_overrides.json",
+    os.path.join(MULTIACE_CONFIG_DIR, "slot_overrides.json"),
 )
 FILAMENT_PARAMS_PATHS = tuple(
     os.environ.get(
@@ -77,10 +99,7 @@ DEFAULT_MATERIALS = [
     "PC", "PC-ABS",
     "PVA",
 ]
-I18N_DIR = os.environ.get(
-    "MULTIACE_I18N_DIR",
-    str((Path(__file__).resolve().parent.parent / "i18n")),
-)
+I18N_DIR = str(resolve_i18n_dir(__file__))
 SCREEN_PROBE_URL = os.environ.get("SCREEN_PROBE_URL", "http://127.0.0.1:8092/snapshot")
 
 HOMING_FLAG_PATH = os.environ.get(
@@ -122,6 +141,8 @@ PLUGIN_PORT_RANGE = os.environ.get("MULTIACE_PLUGIN_PORTS", "8089-8098")
 PLUGIN_DISCOVERY_TTL = float(os.environ.get("MULTIACE_PLUGIN_TTL", "30"))
 DEFAULT_FRONTEND = str((Path(__file__).resolve().parent.parent / "frontend"))
 FRONTEND_DIR = os.environ.get("MULTIACE_FRONTEND_DIR", DEFAULT_FRONTEND)
+
+
 def _resolve_version() -> str:
     v = os.environ.get("MULTIACE_WEB_VERSION", "")
     if v:
@@ -1415,6 +1436,13 @@ def _read_update_cfg() -> dict[str, str]:
 async def _run_update_script(args: list[str], timeout: float) -> dict:
     """Exec the bundled multiace_update.sh and capture stdout+rc."""
 
+    if UPDATES_MANAGED:
+        raise HTTPException(
+            status_code=409,
+            detail=("multiACE updates are managed by the host firmware; "
+                    "use the PAXX Firmware Config integration."),
+        )
+
     update_script = None
     for candidate in (
         "/home/lava/multiace_update.sh",
@@ -1459,6 +1487,15 @@ async def _run_update_script(args: list[str], timeout: float) -> dict:
             line.split("STATUS:", 1)[1].strip()
             for line in out.splitlines() if "STATUS:" in line
         ],
+    }
+
+
+@app.get("/api/update/status")
+async def update_status() -> dict:
+    """Tell the web UI who owns multiACE updates."""
+    return {
+        "managed": UPDATES_MANAGED,
+        "owner": "paxx" if UPDATES_MANAGED else "multiace",
     }
 
 @app.post("/api/preflight/inbox")

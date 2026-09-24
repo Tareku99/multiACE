@@ -24,6 +24,26 @@ ACE_API_VERSION = 1
 MULTIACE_BUILD_TAG = "f026fc15"
 MULTIACE_BUNDLE_SHA1 = "573fa61"
 
+
+def _env_flag(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# PAXX sets this explicitly when it owns installation and updates. The marker
+# is a durable fallback for service/SSH environments that do not inherit the
+# activation hook's environment.
+MULTIACE_MANAGED_MARKER = os.environ.get(
+    'MULTIACE_MANAGED_MARKER', '/oem/apps/multiace/.paxx-managed')
+MULTIACE_MANAGED = (
+    _env_flag('MULTIACE_MANAGED')
+    or os.path.exists(MULTIACE_MANAGED_MARKER))
+MULTIACE_CONFIG_DIR = os.environ.get(
+    'MULTIACE_CONFIG_DIR',
+    '/home/lava/printer_data/config/extended/multiace')
+
 def _load_i18n_catalog(i18n_dir, lang):
     """Read <i18n_dir>/<lang>.json overlaid on en.json. Returns a dict
     (possibly empty if the i18n dir is missing) - caller falls back to
@@ -572,7 +592,7 @@ class MultiAce:
 
         self._slot_overrides = {}
         self._slot_overrides_file = (
-            "/home/lava/printer_data/config/extended/multiace/slot_overrides.json")
+            os.path.join(MULTIACE_CONFIG_DIR, 'slot_overrides.json'))
         self._slot_overrides_mtime = 0.0
 
         self._orig_set_ptc = None
@@ -625,7 +645,9 @@ class MultiAce:
         self._web_port = config.getint(
             'web_port', 7126, minval=1024, maxval=65535)
         self._web_dir = config.get(
-            'web_dir', '/home/lava/multiace_web')
+            'web_dir', os.environ.get('MULTIACE_WEB_DIR',
+                                     '/home/lava/multiace_web'))
+        self._managed_by_host = MULTIACE_MANAGED
 
         config.get('identity_priority', '')
         _sm_raw = (config.get('spool_mode', '') or '').strip().lower()
@@ -649,7 +671,7 @@ class MultiAce:
         self._inbox_max_mb = config.getint(
             'inbox_max_mb', 256, minval=1, maxval=4096)
 
-        self._i18n_primary = '/home/lava/printer_data/config/extended/multiace/i18n'
+        self._i18n_primary = os.path.join(MULTIACE_CONFIG_DIR, 'i18n')
         self._i18n_fallback = os.path.join(self._web_dir, 'i18n')
         self._reload_i18n_catalog()
 
@@ -1914,10 +1936,15 @@ class MultiAce:
         except Exception as e:
             logging.info('[multiACE] bg-swap banner failed: %s' % e)
 
-        self._ace_mode = 'normal'
+        # A PAXX-managed package is activated through the host's runtime
+        # hook, so ACE is already the selected implementation at startup.
+        # Do not require a standalone installer to seed save_variables first.
+        default_mode = 'multi' if self._managed_by_host else 'normal'
+        self._ace_mode = default_mode
         self._heads_manual_conv = set()
         if self.save_variables:
-            self._ace_mode = self.save_variables.allVariables.get('ace__mode', 'normal')
+            self._ace_mode = self.save_variables.allVariables.get(
+                'ace__mode', default_mode)
             self._restore_head_manual()
             self._restore_head_feeder()
             self._restore_head_ace()
@@ -15946,6 +15973,32 @@ class MultiAce:
                 pass
             return
 
+        if self._managed_by_host:
+            # In managed mode the host activates ACE by bind-mounting the
+            # selected release. Never fall back to the standalone helper,
+            # which copies over stock Klipper files. Leaving managed mode is
+            # a host-firmware operation and requires a reboot.
+            if mode == 'normal':
+                raise gcmd.error(
+                    '[multiACE] Normal mode is controlled by the host '
+                    'firmware. Disable multiACE in PAXX and reboot.')
+
+            self.gcode.run_script_from_command(
+                "SAVE_VARIABLE VARIABLE=ace__mode VALUE=\"'%s'\"" % mode)
+            self._ace_mode = mode
+            if mode == 'head' and legacy_head is not None:
+                self._ace_head = legacy_head
+                for h in range(4):
+                    self.head_feeder[h] = (h != legacy_head)
+                self._save_head_feeder()
+            if mode == 'head':
+                self._convert_manual_to_feeder()
+            elif mode == 'multi':
+                self._convert_feeder_to_manual()
+            raise gcmd.error(
+                '[multiACE] Switched to %s mode. Reboot the printer to '
+                'activate the managed runtime.' % mode.upper())
+
         save_vars = self.printer.lookup_object('save_variables')
         vars_path = save_vars.filename
         script_dir = os.path.dirname(os.path.abspath(vars_path))
@@ -15989,15 +16042,20 @@ class MultiAce:
         raise gcmd.error(
             '[multiACE] Switched to %s mode. Please reboot the printer to activate!' % mode.upper())
 
-    _UPDATE_SCRIPT = '/home/lava/multiace_update.sh'
-
     def _run_update_script(self, gcmd, sub_args, timeout):
-        if not os.path.isfile(self._UPDATE_SCRIPT):
+        if self._managed_by_host or _env_flag('MULTIACE_DISABLE_UPDATES'):
+            raise gcmd.error(
+                '[multiACE] Updates are managed by the host firmware. '
+                'Use PAXX Firmware Config to select a tested release.')
+
+        update_script = os.environ.get(
+            'MULTIACE_UPDATE_SCRIPT', '/home/lava/multiace_update.sh')
+        if not os.path.isfile(update_script):
             raise gcmd.error(
                 '[multiACE] Updater script not found at %s - re-run '
                 'install_multiace.sh from your repo to install it.'
-                % self._UPDATE_SCRIPT)
-        cmd = ['bash', self._UPDATE_SCRIPT] + sub_args
+                % update_script)
+        cmd = ['bash', update_script] + sub_args
 
         env = os.environ.copy()
         env['MULTIACE_UPDATE_REPO'] = self._update_repo

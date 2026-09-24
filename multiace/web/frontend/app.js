@@ -4596,6 +4596,7 @@ createApp({
       latest: "",
       statusText: "",
       canApply: false,
+      managed: false,
       busy: null,
       log: "",
     });
@@ -4609,6 +4610,14 @@ createApp({
         const r = await fetch(`${API}/debug-mode`);
         const j = await r.json();
         if (r.ok) debugState.enabled = !!j.enabled;
+      } catch (e) {
+      }
+    }
+    async function refreshUpdateStatus() {
+      try {
+        const r = await fetch(`${API}/update/status`);
+        const j = await r.json();
+        if (r.ok) updateState.managed = !!j.managed;
       } catch (e) {
       }
     }
@@ -6273,6 +6282,7 @@ createApp({
       await loadMaterials();
       await loadNotifications();
       await refreshDebugState();
+      await refreshUpdateStatus();
       await refreshPlugins();
       if (state.mode === "normal" && ["dashboard", "calibration"].includes(tab.value)) {
         tab.value = "config";

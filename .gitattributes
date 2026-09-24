@@ -1,0 +1,13 @@
+# Keep executable and CI source files portable when the repository is cloned on
+# Windows and executed on the Linux-based printer or in GitHub Actions.
+* text=auto
+*.sh text eol=lf
+*.bash text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf

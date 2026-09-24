@@ -13,6 +13,7 @@ Environment variables:
   MULTIACE_MANAGED       set to 1 when PAXX owns installation and updates
   MULTIACE_MANAGED_MARKER durable managed-install marker path
   MULTIACE_CONFIG_DIR    default /home/lava/printer_data/config/extended/multiace
+  MULTIACE_I18N_DIR      optional translation-catalog directory override
   MULTIACE_WEB_VERSION   default "0.1.0"
 """
 from __future__ import annotations
@@ -46,6 +47,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import preflight_core
+from i18n_path import resolve_i18n_dir
 
 MOONRAKER_URL = os.environ.get("MOONRAKER_URL", "http://127.0.0.1:7125")
 
@@ -97,10 +99,7 @@ DEFAULT_MATERIALS = [
     "PC", "PC-ABS",
     "PVA",
 ]
-I18N_DIR = os.environ.get(
-    "MULTIACE_I18N_DIR",
-    str((Path(__file__).resolve().parent.parent / "i18n")),
-)
+I18N_DIR = str(resolve_i18n_dir(__file__))
 SCREEN_PROBE_URL = os.environ.get("SCREEN_PROBE_URL", "http://127.0.0.1:8092/snapshot")
 
 HOMING_FLAG_PATH = os.environ.get(
